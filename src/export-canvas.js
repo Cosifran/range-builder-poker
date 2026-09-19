@@ -1,5 +1,5 @@
 import { handLabel } from "./hands.js";
-import { grid, actions, currentPosition, currentExtraAction, EXTRA_ACTIONS, TOTAL_COMBOS } from "./state.js";
+import { grid, actions, currentPosition, currentExtraAction, currentGameMode, EXTRA_ACTIONS, GAME_MODES, TOTAL_COMBOS } from "./state.js";
 import { comboSums, colorOf } from "./render.js";
 
 // ── Canvas helpers ───────────────────────────────────────────────────────────
@@ -79,7 +79,12 @@ function buildExportCanvas() {
   ctx.textAlign = "left";
   ctx.fillStyle = textColor;
   ctx.font = "700 22px -apple-system, Segoe UI, Roboto, sans-serif";
-  let title = `Rango — ${currentPosition}`;
+  
+  // Get game mode name
+  const modeObj = GAME_MODES.find(m => m.id === currentGameMode);
+  const modeName = modeObj ? modeObj.name : currentGameMode;
+  
+  let title = `${modeName} — ${currentPosition}`;
   if (currentExtraAction) {
     const ea = EXTRA_ACTIONS.find((e) => e.id === currentExtraAction);
     if (ea) title += ` vs ${ea.name}`;
@@ -194,7 +199,7 @@ export function initExport(showToast) {
             const a = document.createElement("a");
             a.href = url;
             try {
-              let filename = `rango-${currentPosition}`;
+              let filename = `${currentGameMode}-${currentPosition}`;
               if (currentExtraAction) {
                 const ea = EXTRA_ACTIONS.find((e) => e.id === currentExtraAction);
                 if (ea) filename += `-vs-${ea.id}`;

@@ -6,6 +6,7 @@ import {
   mode,
   currentPosition,
   currentExtraAction,
+  currentGameMode,
   grid,
   isPointerDown,
   loadState,
@@ -13,6 +14,7 @@ import {
   setMode,
   setCurrentPosition,
   setCurrentExtraAction,
+  setCurrentGameMode,
   setActiveId,
   setPointerDown,
   removeAction,
@@ -21,6 +23,7 @@ import {
 import {
   renderPositions,
   renderExtraActions,
+  renderGameModes,
   renderGrid,
   renderLegend,
   updateModeHint,
@@ -153,6 +156,21 @@ function handleExtraActionSelect(eaId) {
   saveState();
 }
 
+function handleGameModeChange(modeId) {
+  setCurrentGameMode(modeId);
+  renderGameModes(handleGameModeChange);
+  renderPositions(handlePositionChange);
+  renderExtraActions(handleExtraActionSelect);
+  renderGrid(handleCellPointerDown, handleCellPointerEnter);
+  renderLegend(
+    handleActionSelect,
+    handleActionDelete,
+    handleActionColorChange,
+    handleActionNameChange,
+  );
+  saveState();
+}
+
 // ── Initialise ───────────────────────────────────────────────────────────────
 
 loadState();
@@ -160,6 +178,7 @@ initEditor();
 initImport(showToast);
 initExport(showToast);
 
+renderGameModes(handleGameModeChange);
 renderPositions(handlePositionChange);
 renderExtraActions(handleExtraActionSelect);
 renderGrid(handleCellPointerDown, handleCellPointerEnter);

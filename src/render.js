@@ -5,9 +5,11 @@ import {
   mode,
   currentPosition,
   currentExtraAction,
+  currentGameMode,
   grid,
   TOTAL_COMBOS,
   EXTRA_ACTIONS,
+  GAME_MODES,
 } from "./state.js";
 
 // ── Pure helpers ─────────────────────────────────────────────────────────────
@@ -83,6 +85,28 @@ let _onActionDelete = () => {};
 let _onActionColorChange = () => {};
 let _onActionNameChange = () => {};
 let _onExtraActionSelect = () => {};
+let _onGameModeChange = () => {};
+
+/**
+ * Render the game mode selector bar. Calls onGameModeChange(modeId) on button click.
+ * @param {(modeId: string) => void} onGameModeChange
+ */
+export function renderGameModes(onGameModeChange) {
+  if (onGameModeChange !== undefined) _onGameModeChange = onGameModeChange;
+  const groupEl = document.getElementById("gameModeGroup");
+  if (!groupEl) return;
+  groupEl.innerHTML = "";
+  GAME_MODES.forEach((m) => {
+    const btn = document.createElement("button");
+    btn.className =
+      "game-mode-btn" + (m.id === currentGameMode ? " active" : "");
+    btn.textContent = m.name;
+    btn.style.setProperty("--mode-color", m.color);
+    btn.addEventListener("click", () => _onGameModeChange(m.id));
+    groupEl.appendChild(btn);
+  });
+  updateCaptureTitle();
+}
 
 /**
  * Render the position bar. Calls onPositionChange(pos) on button click.
@@ -133,12 +157,17 @@ export function renderExtraActions(onExtraActionSelect) {
 }
 
 /**
- * Update the capture title to reflect current position and extra action context.
+ * Update the capture title to reflect current game mode, position, and extra action context.
  */
 function updateCaptureTitle() {
   const titleEl = document.getElementById("captureTitle");
   if (!titleEl) return;
-  let title = `Rango — ${currentPosition}`;
+  
+  // Get game mode name
+  const modeObj = GAME_MODES.find(m => m.id === currentGameMode);
+  const modeName = modeObj ? modeObj.name : currentGameMode;
+  
+  let title = `${modeName} — ${currentPosition}`;
   if (currentExtraAction) {
     const ea = EXTRA_ACTIONS.find((e) => e.id === currentExtraAction);
     if (ea) title += ` vs ${ea.name}`;

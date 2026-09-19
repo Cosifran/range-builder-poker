@@ -4,7 +4,17 @@ import { POSITIONS } from "./hands.js";
 export const TOTAL_COMBOS = 1326;
 
 /** localStorage key for persisting app state. */
-export const STORAGE_KEY = "rangeBuilderStateV4";
+export const STORAGE_KEY = "rangeBuilderStateV5";
+
+// ── Game Modes (poker format types) ──────────────────────────────────────────
+
+/** Predefined game modes representing different poker formats. */
+export const GAME_MODES = [
+  { id: "cash", name: "Cash Game", color: "#10b981" },
+  { id: "tournament", name: "Tournament", color: "#f59e0b" },
+  { id: "spingo", name: "Spin Go", color: "#8b5cf6" },
+  { id: "husng", name: "HU SnG", color: "#ef4444" },
+];
 
 // ── Extra Actions (opponent actions that require different ranges) ───────────
 
@@ -37,20 +47,34 @@ export let currentPosition = "UTG";
 /** Currently selected extra action ID, or null for default RFI range. */
 export let currentExtraAction = null;
 
+/** Currently selected game mode ID. */
+export let currentGameMode = "cash";
+
 /**
- * Map of position string → { [extraActionId || "rfi"]: 13×13 grid }.
- * The "rfi" key holds the default RFI range for each position.
- * Extra action keys hold ranges for when facing that specific opponent action.
+ * Map of gameMode → position → { [extraActionId || "rfi"]: 13×13 grid }.
+ * Each game mode has its own independent set of position grids.
  */
 export let positionGrids = {};
-POSITIONS.forEach((p) => {
-  positionGrids[p] = {
-    rfi: createEmptyGrid(),
-  };
-  EXTRA_ACTIONS.forEach((ea) => {
-    positionGrids[p][ea.id] = createEmptyGrid();
+
+/**
+ * Initialize empty positionGrids for all game modes.
+ */
+function initAllModeGrids() {
+  GAME_MODES.forEach((mode) => {
+    positionGrids[mode.id] = {};
+    POSITIONS.forEach((p) => {
+      positionGrids[mode.id][p] = {
+        rfi: createEmptyGrid(),
+      };
+      EXTRA_ACTIONS.forEach((ea) => {
+        positionGrids[mode.id][p][ea.id] = createEmptyGrid();
+      });
+    });
   });
-});
+}
+
+// Initialize on module load
+initAllModeGrids();
 
 /** Shorthand reference to the grid for currentPosition + currentExtraAction. */
 export let grid = getGridForCurrentContext();
@@ -59,11 +83,14 @@ export let grid = getGridForCurrentContext();
 export let isPointerDown = false;
 
 /**
- * Get the grid for the current position and extra action context.
+ * Get the grid for the current game mode, position, and extra action context.
  * @returns {Array<Array<{ freqs: Record<string, number> }>>}
  */
 function getGridForCurrentContext() {
-  const posGrids = positionGrids[currentPosition];
+  const modeGrids = positionGrids[currentGameMode];
+  if (!modeGrids) return createEmptyGrid();
+  const posGrids = modeGrids[currentPosition];
+  if (!posGrids) return createEmptyGrid();
   if (currentExtraAction && posGrids[currentExtraAction]) {
     return posGrids[currentExtraAction];
   }
@@ -89,12 +116,19 @@ export function createEmptyGrid() {
 
 /**
  * Load persisted state from localStorage into the module-level variables.
- * Silently ignores corrupted data. Migrates V3 format to V4 if needed.
+ * Silently ignores corrupted data. Migrates V3/V4 format to V5 if needed.
  */
 export function loadState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
+    if (!raw) {
+      // Also check for V4 key and migrate if found
+      const v4Raw = localStorage.getItem("rangeBuilderStateV4");
+      if (v4Raw) {
+        migrateV4ToV5(v4Raw);
+      }
+      return;
+    }
     const parsed = JSON.parse(raw);
     if (parsed.actions && Array.isArray(parsed.actions))
       actions = parsed.actions;
@@ -106,25 +140,96 @@ export function loadState() {
       currentPosition = parsed.currentPosition;
     if (parsed.currentExtraAction !== undefined)
       currentExtraAction = parsed.currentExtraAction;
-    if (parsed.positions) {
-      POSITIONS.forEach((p) => {
-        if (parsed.positions[p]) {
-          // Migrate V3 format (flat grid) to V4 (object with rfi + extra actions)
-          if (Array.isArray(parsed.positions[p])) {
-            positionGrids[p] = { rfi: parsed.positions[p] };
-            EXTRA_ACTIONS.forEach((ea) => {
-              if (!positionGrids[p][ea.id])
-                positionGrids[p][ea.id] = createEmptyGrid();
+    if (parsed.currentGameMode && GAME_MODES.find(m => m.id === parsed.currentGameMode))
+      currentGameMode = parsed.currentGameMode;
+    
+    // V5 format: positionGrids is nested by game mode
+    if (parsed.positions && typeof parsed.positions === "object") {
+      // Check if this is V5 format (has game mode keys)
+      const firstKey = Object.keys(parsed.positions)[0];
+      if (firstKey && GAME_MODES.find(m => m.id === firstKey)) {
+        // V5 format: already nested by game mode
+        GAME_MODES.forEach((mode) => {
+          if (parsed.positions[mode.id]) {
+            POSITIONS.forEach((p) => {
+              if (parsed.positions[mode.id][p]) {
+                positionGrids[mode.id][p] = parsed.positions[mode.id][p];
+              }
             });
-          } else {
-            positionGrids[p] = parsed.positions[p];
           }
-        }
-      });
+        });
+      } else if (firstKey && POSITIONS.includes(firstKey)) {
+        // V4 format: positions directly (no game mode nesting)
+        // Migrate to Cash mode
+        POSITIONS.forEach((p) => {
+          if (parsed.positions[p]) {
+            if (Array.isArray(parsed.positions[p])) {
+              // V3 flat format
+              positionGrids["cash"][p] = { rfi: parsed.positions[p] };
+              EXTRA_ACTIONS.forEach((ea) => {
+                if (!positionGrids["cash"][p][ea.id])
+                  positionGrids["cash"][p][ea.id] = createEmptyGrid();
+              });
+            } else {
+              // V4 format with extra actions
+              positionGrids["cash"][p] = parsed.positions[p];
+            }
+          }
+        });
+      }
     }
     grid = getGridForCurrentContext();
   } catch (e) {
     /* ignore corrupted state */
+  }
+}
+
+/**
+ * Migrate V4 format data to V5 (Cash mode).
+ * @param {string} v4Raw - Raw JSON string from V4 storage
+ */
+function migrateV4ToV5(v4Raw) {
+  try {
+    const parsed = JSON.parse(v4Raw);
+    const v5Data = {
+      actions: parsed.actions || actions,
+      activeId: parsed.activeId || activeId,
+      currentPosition: parsed.currentPosition || currentPosition,
+      currentExtraAction: parsed.currentExtraAction,
+      currentGameMode: "cash",
+      positions: { cash: {} },
+    };
+    
+    if (parsed.positions) {
+      POSITIONS.forEach((p) => {
+        if (parsed.positions[p]) {
+          if (Array.isArray(parsed.positions[p])) {
+            v5Data.positions.cash[p] = { rfi: parsed.positions[p] };
+            EXTRA_ACTIONS.forEach((ea) => {
+              if (!v5Data.positions.cash[p][ea.id])
+                v5Data.positions.cash[p][ea.id] = createEmptyGrid();
+            });
+          } else {
+            v5Data.positions.cash[p] = parsed.positions[p];
+          }
+        }
+      });
+    }
+    
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(v5Data));
+    // Apply the migrated data
+    if (v5Data.actions) actions = v5Data.actions;
+    if (v5Data.activeId) activeId = v5Data.activeId;
+    if (v5Data.currentPosition) currentPosition = v5Data.currentPosition;
+    currentGameMode = "cash";
+    POSITIONS.forEach((p) => {
+      if (v5Data.positions.cash[p]) {
+        positionGrids["cash"][p] = v5Data.positions.cash[p];
+      }
+    });
+    grid = getGridForCurrentContext();
+  } catch (e) {
+    /* ignore migration errors */
   }
 }
 
@@ -144,6 +249,7 @@ export function saveState() {
           activeId,
           currentPosition,
           currentExtraAction,
+          currentGameMode,
           positions: positionGrids,
         }),
       );
@@ -182,6 +288,17 @@ export function setCurrentExtraAction(eaId) {
 }
 
 /**
+ * Switch to a different game mode and update the grid reference.
+ * @param {string} modeId - Game mode ID.
+ */
+export function setCurrentGameMode(modeId) {
+  if (GAME_MODES.find(m => m.id === modeId)) {
+    currentGameMode = modeId;
+    grid = getGridForCurrentContext();
+  }
+}
+
+/**
  * Set the active action ID (or null for eraser).
  * @param {string|null} id
  */
@@ -203,11 +320,13 @@ export function setPointerDown(value) {
  */
 export function removeAction(actionId) {
   actions = actions.filter((x) => x.id !== actionId);
-  POSITIONS.forEach((p) => {
-    Object.keys(positionGrids[p]).forEach((gridKey) => {
-      for (let i = 0; i < 13; i++)
-        for (let j = 0; j < 13; j++)
-          delete positionGrids[p][gridKey][i][j].freqs[actionId];
+  GAME_MODES.forEach((mode) => {
+    POSITIONS.forEach((p) => {
+      Object.keys(positionGrids[mode.id][p]).forEach((gridKey) => {
+        for (let i = 0; i < 13; i++)
+          for (let j = 0; j < 13; j++)
+            delete positionGrids[mode.id][p][gridKey][i][j].freqs[actionId];
+      });
     });
   });
 }
@@ -217,6 +336,6 @@ export function removeAction(actionId) {
  */
 export function clearCurrentGrid() {
   const gridKey = currentExtraAction || "rfi";
-  positionGrids[currentPosition][gridKey] = createEmptyGrid();
+  positionGrids[currentGameMode][currentPosition][gridKey] = createEmptyGrid();
   grid = getGridForCurrentContext();
 }
