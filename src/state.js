@@ -4,7 +4,17 @@ import { POSITIONS } from "./hands.js";
 export const TOTAL_COMBOS = 1326;
 
 /** localStorage key for persisting app state. */
-export const STORAGE_KEY = "rangeBuilderStateV3";
+export const STORAGE_KEY = "rangeBuilderStateV4";
+
+// ── Extra Actions (opponent actions that require different ranges) ───────────
+
+/** Predefined extra actions representing opponent betting actions. */
+export const EXTRA_ACTIONS = [
+  { id: "3bet", name: "3BET", color: "#f97316" },
+  { id: "3bet_call", name: "3BET + CALL", color: "#a855f7" },
+  { id: "squeeze", name: "SQUEEZE", color: "#ec4899" },
+  { id: "cold4bet", name: "COLD4BET", color: "#ef4444" },
+];
 
 // ── Mutable state (module-level) ─────────────────────────────────────────────
 
@@ -24,15 +34,41 @@ export let mode = "quick";
 /** Currently selected table position. */
 export let currentPosition = "UTG";
 
-/** Map of position string → 13×13 grid of { freqs: { [actionId]: fraction } }. */
-export let positionGrids = {};
-POSITIONS.forEach((p) => (positionGrids[p] = createEmptyGrid()));
+/** Currently selected extra action ID, or null for default RFI range. */
+export let currentExtraAction = null;
 
-/** Shorthand reference to the grid for currentPosition. */
-export let grid = positionGrids[currentPosition];
+/**
+ * Map of position string → { [extraActionId || "rfi"]: 13×13 grid }.
+ * The "rfi" key holds the default RFI range for each position.
+ * Extra action keys hold ranges for when facing that specific opponent action.
+ */
+export let positionGrids = {};
+POSITIONS.forEach((p) => {
+  positionGrids[p] = {
+    rfi: createEmptyGrid(),
+  };
+  EXTRA_ACTIONS.forEach((ea) => {
+    positionGrids[p][ea.id] = createEmptyGrid();
+  });
+});
+
+/** Shorthand reference to the grid for currentPosition + currentExtraAction. */
+export let grid = getGridForCurrentContext();
 
 /** Whether the pointer is currently down (for drag-painting). */
 export let isPointerDown = false;
+
+/**
+ * Get the grid for the current position and extra action context.
+ * @returns {Array<Array<{ freqs: Record<string, number> }>>}
+ */
+function getGridForCurrentContext() {
+  const posGrids = positionGrids[currentPosition];
+  if (currentExtraAction && posGrids[currentExtraAction]) {
+    return posGrids[currentExtraAction];
+  }
+  return posGrids.rfi;
+}
 
 // ── Pure helpers ─────────────────────────────────────────────────────────────
 
@@ -53,7 +89,7 @@ export function createEmptyGrid() {
 
 /**
  * Load persisted state from localStorage into the module-level variables.
- * Silently ignores corrupted data.
+ * Silently ignores corrupted data. Migrates V3 format to V4 if needed.
  */
 export function loadState() {
   try {
@@ -68,12 +104,25 @@ export function loadState() {
       POSITIONS.includes(parsed.currentPosition)
     )
       currentPosition = parsed.currentPosition;
+    if (parsed.currentExtraAction !== undefined)
+      currentExtraAction = parsed.currentExtraAction;
     if (parsed.positions) {
       POSITIONS.forEach((p) => {
-        if (parsed.positions[p]) positionGrids[p] = parsed.positions[p];
+        if (parsed.positions[p]) {
+          // Migrate V3 format (flat grid) to V4 (object with rfi + extra actions)
+          if (Array.isArray(parsed.positions[p])) {
+            positionGrids[p] = { rfi: parsed.positions[p] };
+            EXTRA_ACTIONS.forEach((ea) => {
+              if (!positionGrids[p][ea.id])
+                positionGrids[p][ea.id] = createEmptyGrid();
+            });
+          } else {
+            positionGrids[p] = parsed.positions[p];
+          }
+        }
       });
     }
-    grid = positionGrids[currentPosition];
+    grid = getGridForCurrentContext();
   } catch (e) {
     /* ignore corrupted state */
   }
@@ -94,6 +143,7 @@ export function saveState() {
           actions,
           activeId,
           currentPosition,
+          currentExtraAction,
           positions: positionGrids,
         }),
       );
@@ -119,7 +169,16 @@ export function setMode(m) {
  */
 export function setCurrentPosition(p) {
   currentPosition = p;
-  grid = positionGrids[currentPosition];
+  grid = getGridForCurrentContext();
+}
+
+/**
+ * Switch to a different extra action context and update the grid reference.
+ * @param {string|null} eaId - Extra action ID, or null for default RFI range.
+ */
+export function setCurrentExtraAction(eaId) {
+  currentExtraAction = eaId;
+  grid = getGridForCurrentContext();
 }
 
 /**
@@ -145,16 +204,19 @@ export function setPointerDown(value) {
 export function removeAction(actionId) {
   actions = actions.filter((x) => x.id !== actionId);
   POSITIONS.forEach((p) => {
-    for (let i = 0; i < 13; i++)
-      for (let j = 0; j < 13; j++)
-        delete positionGrids[p][i][j].freqs[actionId];
+    Object.keys(positionGrids[p]).forEach((gridKey) => {
+      for (let i = 0; i < 13; i++)
+        for (let j = 0; j < 13; j++)
+          delete positionGrids[p][gridKey][i][j].freqs[actionId];
+    });
   });
 }
 
 /**
- * Clear the current position's grid and update the grid reference.
+ * Clear the current position's grid (for current extra action context) and update the grid reference.
  */
 export function clearCurrentGrid() {
-  positionGrids[currentPosition] = createEmptyGrid();
-  grid = positionGrids[currentPosition];
+  const gridKey = currentExtraAction || "rfi";
+  positionGrids[currentPosition][gridKey] = createEmptyGrid();
+  grid = getGridForCurrentContext();
 }

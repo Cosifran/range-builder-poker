@@ -5,12 +5,14 @@ import {
   activeId,
   mode,
   currentPosition,
+  currentExtraAction,
   grid,
   isPointerDown,
   loadState,
   saveState,
   setMode,
   setCurrentPosition,
+  setCurrentExtraAction,
   setActiveId,
   setPointerDown,
   removeAction,
@@ -18,6 +20,7 @@ import {
 } from "./state.js";
 import {
   renderPositions,
+  renderExtraActions,
   renderGrid,
   renderLegend,
   updateModeHint,
@@ -125,6 +128,21 @@ function handleActionNameChange(actionId, newName) {
 function handlePositionChange(pos) {
   setCurrentPosition(pos);
   renderPositions(handlePositionChange);
+  renderExtraActions(handleExtraActionSelect);
+  renderGrid(handleCellPointerDown, handleCellPointerEnter);
+  renderLegend(
+    handleActionSelect,
+    handleActionDelete,
+    handleActionColorChange,
+    handleActionNameChange,
+  );
+  saveState();
+}
+
+function handleExtraActionSelect(eaId) {
+  setCurrentExtraAction(eaId);
+  renderPositions(handlePositionChange);
+  renderExtraActions(handleExtraActionSelect);
   renderGrid(handleCellPointerDown, handleCellPointerEnter);
   renderLegend(
     handleActionSelect,
@@ -143,6 +161,7 @@ initImport(showToast);
 initExport(showToast);
 
 renderPositions(handlePositionChange);
+renderExtraActions(handleExtraActionSelect);
 renderGrid(handleCellPointerDown, handleCellPointerEnter);
 renderLegend(
   handleActionSelect,

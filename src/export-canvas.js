@@ -1,5 +1,5 @@
 import { handLabel } from "./hands.js";
-import { grid, actions, currentPosition, TOTAL_COMBOS } from "./state.js";
+import { grid, actions, currentPosition, currentExtraAction, EXTRA_ACTIONS, TOTAL_COMBOS } from "./state.js";
 import { comboSums, colorOf } from "./render.js";
 
 // ── Canvas helpers ───────────────────────────────────────────────────────────
@@ -79,7 +79,14 @@ function buildExportCanvas() {
   ctx.textAlign = "left";
   ctx.fillStyle = textColor;
   ctx.font = "700 22px -apple-system, Segoe UI, Roboto, sans-serif";
-  ctx.fillText(`Rango RFI — ${currentPosition}`, PAD_X, cursorY);
+  let title = `Rango — ${currentPosition}`;
+  if (currentExtraAction) {
+    const ea = EXTRA_ACTIONS.find((e) => e.id === currentExtraAction);
+    if (ea) title += ` vs ${ea.name}`;
+  } else {
+    title += " — RFI (Default)";
+  }
+  ctx.fillText(title, PAD_X, cursorY);
   cursorY += TITLE_H + LEGEND_GAP_TOP;
 
   const sums = comboSums();
@@ -187,7 +194,12 @@ export function initExport(showToast) {
             const a = document.createElement("a");
             a.href = url;
             try {
-              a.download = `rango-${currentPosition}.jpg`;
+              let filename = `rango-${currentPosition}`;
+              if (currentExtraAction) {
+                const ea = EXTRA_ACTIONS.find((e) => e.id === currentExtraAction);
+                if (ea) filename += `-vs-${ea.id}`;
+              }
+              a.download = `${filename}.jpg`;
               document.body.appendChild(a);
               a.click();
               document.body.removeChild(a);

@@ -4,8 +4,10 @@ import {
   activeId,
   mode,
   currentPosition,
+  currentExtraAction,
   grid,
   TOTAL_COMBOS,
+  EXTRA_ACTIONS,
 } from "./state.js";
 
 // ── Pure helpers ─────────────────────────────────────────────────────────────
@@ -80,6 +82,7 @@ let _onActionSelect = () => {};
 let _onActionDelete = () => {};
 let _onActionColorChange = () => {};
 let _onActionNameChange = () => {};
+let _onExtraActionSelect = () => {};
 
 /**
  * Render the position bar. Calls onPositionChange(pos) on button click.
@@ -96,8 +99,53 @@ export function renderPositions(onPositionChange) {
     btn.addEventListener("click", () => onPositionChange(p));
     groupEl.appendChild(btn);
   });
-  document.getElementById("captureTitle").textContent =
-    `Rango RFI — ${currentPosition}`;
+  updateCaptureTitle();
+}
+
+/**
+ * Render the extra actions bar. Calls onExtraActionSelect(eaId) on button click.
+ * @param {(eaId: string|null) => void} onExtraActionSelect
+ */
+export function renderExtraActions(onExtraActionSelect) {
+  if (onExtraActionSelect !== undefined) _onExtraActionSelect = onExtraActionSelect;
+  const groupEl = document.getElementById("extraActionGroup");
+  if (!groupEl) return;
+  groupEl.innerHTML = "";
+
+  // Default RFI button
+  const rfiBtn = document.createElement("button");
+  rfiBtn.className = "extra-action-btn" + (currentExtraAction === null ? " active" : "");
+  rfiBtn.textContent = "RFI (Default)";
+  rfiBtn.addEventListener("click", () => _onExtraActionSelect(null));
+  groupEl.appendChild(rfiBtn);
+
+  // Extra action buttons
+  EXTRA_ACTIONS.forEach((ea) => {
+    const btn = document.createElement("button");
+    btn.className = "extra-action-btn" + (currentExtraAction === ea.id ? " active" : "");
+    btn.textContent = ea.name;
+    btn.style.borderColor = ea.color;
+    btn.addEventListener("click", () => _onExtraActionSelect(ea.id));
+    groupEl.appendChild(btn);
+  });
+
+  updateCaptureTitle();
+}
+
+/**
+ * Update the capture title to reflect current position and extra action context.
+ */
+function updateCaptureTitle() {
+  const titleEl = document.getElementById("captureTitle");
+  if (!titleEl) return;
+  let title = `Rango — ${currentPosition}`;
+  if (currentExtraAction) {
+    const ea = EXTRA_ACTIONS.find((e) => e.id === currentExtraAction);
+    if (ea) title += ` vs ${ea.name}`;
+  } else {
+    title += " — RFI (Default)";
+  }
+  titleEl.textContent = title;
 }
 
 /**
